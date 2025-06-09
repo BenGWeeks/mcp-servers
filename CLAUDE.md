@@ -10,21 +10,23 @@ This repository contains a collection of Model Context Protocol (MCP) servers fo
 
 **MCP Base Classes**: All servers inherit from `MCPBaseServer` in `src/shared/mcp_base.py`, which provides standardized MCP protocol handling, tool registration, and error management.
 
-**Multi-Modal Data Collection**: Educational platforms lack APIs, so servers use hybrid approaches:
-- Email monitoring for authentication codes and progress notifications
-- Web automation via Playwright for dashboard scraping
+**Background Data Collection**: Educational platforms lack APIs, so servers use automated background collection:
+- Email monitoring daemon (every 5 minutes) for authentication codes and progress notifications
+- Web automation daemon (every 30 minutes) via Playwright for dashboard scraping
 - SQLite databases for persistent progress tracking and analytics
+- **Instant MCP responses**: All tools return cached data for sub-second response times
 
-**Container Orchestration**: Each MCP server runs in its own container with shared dependencies (ProtonMail Bridge for secure email access) managed via Docker Compose.
+**Container Orchestration**: Each MCP server runs in its own container with configurable email access managed via Docker Compose.
 
 ### Synthesis Tracker Architecture
 
 The flagship server (`src/synthesis/`) demonstrates the full architecture pattern:
 
-1. **Email Integration Layer** (`shared/email_utils.py`): Monitors ProtonMail via Bridge for both login codes and daily progress emails from Synthesis.com
-2. **Web Automation Layer** (`synthesis/synthesis_client.py`): Playwright-based browser automation for dashboard data extraction when email parsing isn't sufficient
-3. **Data Persistence Layer** (`shared/storage_utils.py`): SQLite database with session tracking, streak calculations, and progress analytics
-4. **MCP Protocol Layer** (`synthesis/server.py`): 6 standardized tools for AI assistant integration
+1. **Background Scheduler** (`synthesis/scheduler.py`): Automated data collection every 5-30 minutes with health checks
+2. **Email Integration Layer** (`shared/email_utils.py`): Monitors email via IMAP for both login codes and daily progress emails from Synthesis.com
+3. **Web Automation Layer** (`synthesis/synthesis_client.py`): Playwright-based browser automation for dashboard data extraction on schedule
+4. **Data Persistence Layer** (`shared/storage_utils.py`): SQLite database with session tracking, streak calculations, and progress analytics  
+5. **MCP Protocol Layer** (`synthesis/server.py`): 6 standardized tools providing instant responses from cached data
 
 ## Development Commands
 
@@ -36,7 +38,7 @@ playwright install chromium
 
 # Set up environment
 cp .env.example .env
-# Edit .env with ProtonMail credentials and Synthesis account details
+# Edit .env with email credentials and Synthesis account details
 
 # Run MCP server directly
 export PYTHONPATH="$(pwd)/src"
@@ -61,19 +63,16 @@ docker build -f docker/Dockerfile.synthesis -t synthesis-test .
 
 ### Docker Development
 ```bash
-# Start full stack (ProtonMail Bridge + MCP server)
+# Start MCP server
 cd docker
 docker-compose up -d
 
 # View logs
-docker-compose logs -f synthesis-tracker
-
-# Initialize ProtonMail Bridge (first time)
-docker run --rm -it -v protonmail:/root shenxn/protonmail-bridge init
+docker-compose logs -f synthesis
 
 # Rebuild and restart specific service
-docker-compose build synthesis-tracker
-docker-compose restart synthesis-tracker
+docker-compose build synthesis
+docker-compose restart synthesis
 ```
 
 ### Code Quality
@@ -88,8 +87,12 @@ flake8 src/
 
 ## Key Design Patterns
 
-### Email-First Data Collection
-Educational platforms rarely provide APIs. The architecture prioritizes email monitoring as the primary data source since platforms reliably send progress emails. Web scraping serves as backup/supplemental data collection.
+### Background Data Collection for Performance
+Educational platforms rarely provide APIs. The architecture uses automated background collection to ensure instant MCP responses:
+- **Email monitoring**: Every 5 minutes for real-time progress updates
+- **Web scraping**: Every 30 minutes for comprehensive dashboard data
+- **Cached responses**: All MCP tools return pre-collected data instantly
+- **Force update**: Triggers immediate background collection when needed
 
 ### Environment-Driven Configuration
 All servers use `config.py` modules that read from environment variables. This enables the same codebase to work in development (direct Python), Docker containers, and production deployments without code changes.
@@ -105,8 +108,8 @@ Each server provides 4-6 focused tools rather than one monolithic interface. Thi
 ### Open WebUI Integration
 MCP servers integrate with Open WebUI via the `mcpo` (MCP-to-OpenAPI) proxy. Configuration lives in `mcpo-config.json`. The proxy converts MCP protocol calls to REST API endpoints that Open WebUI can consume.
 
-### ProtonMail Bridge Dependency
-All servers requiring email access depend on the ProtonMail Bridge container for secure IMAP/SMTP access. The Bridge provides localhost endpoints that bypass ProtonMail's encryption requirements while maintaining security.
+### Email Configuration
+Servers requiring email access use standard IMAP connections. Email providers like Gmail, Outlook, and others are supported through their IMAP interfaces with app-specific passwords for enhanced security.
 
 ### Database Sharing Strategy
 Each server maintains its own SQLite database, but shared utilities in `storage_utils.py` provide consistent schemas and cross-server analytics capabilities. Future servers can query data from other servers for comprehensive family learning insights.

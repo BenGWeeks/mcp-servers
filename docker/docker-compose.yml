@@ -1,37 +1,18 @@
 version: '3.8'
 
 services:
-  # ProtonMail Bridge for secure email access
-  protonmail-bridge:
-    image: shenxn/protonmail-bridge:latest
-    container_name: protonmail-bridge
-    volumes:
-      - protonmail-data:/root
-    ports:
-      - "127.0.0.1:1143:143"  # IMAP
-      - "127.0.0.1:1025:25"   # SMTP
-    restart: unless-stopped
-    networks:
-      - mcp-network
-    healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "143"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   # Synthesis MCP Server
-  synthesis-tracker:
+  synthesis:
     build:
       context: ..
       dockerfile: docker/Dockerfile.synthesis
-    container_name: synthesis-tracker
-    depends_on:
-      - protonmail-bridge
+    container_name: synthesis
     environment:
-      - EMAIL_SERVER=protonmail-bridge
-      - EMAIL_PORT=143
+      - EMAIL_SERVER=${EMAIL_SERVER:-imap.gmail.com}
+      - EMAIL_PORT=${EMAIL_PORT:-993}
       - EMAIL_USERNAME=${EMAIL_USERNAME}
       - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-true}
       - SYNTHESIS_EMAIL=${SYNTHESIS_EMAIL}
       - DATABASE_PATH=/app/data/synthesis.db
       - HEADLESS_BROWSER=true
@@ -53,7 +34,5 @@ networks:
     driver: bridge
 
 volumes:
-  protonmail-data:
-    name: protonmail-data
   synthesis-data:
     name: synthesis-data

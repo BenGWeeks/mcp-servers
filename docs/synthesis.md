@@ -1,15 +1,15 @@
-# Synthesis Tracker MCP Server
+# Synthesis MCP Server
 
 MCP server for tracking educational progress on Synthesis.com tutoring platform.
 
 ## Overview
 
-The Synthesis Tracker enables AI assistants to monitor and track study progress on Synthesis.com, providing insights into daily study habits, progress streaks, and learning achievements. Since Synthesis.com doesn't provide a public API, this server uses email monitoring and web automation to gather progress data.
+The Synthesis MCP server enables AI assistants to monitor and track study progress on Synthesis.com, providing insights into daily study habits, progress streaks, and learning achievements. Since Synthesis.com doesn't provide a public API, this server uses email monitoring and web automation to gather progress data.
 
 ## Features
 
 ### 📧 Email Integration
-- Monitors ProtonMail for Synthesis login codes
+- Monitors email (Gmail, Outlook, etc.) for Synthesis login codes
 - Parses daily progress emails automatically
 - Extracts study time and lesson completion data
 
@@ -62,33 +62,31 @@ Force update progress by logging into Synthesis.com.
 
 ### Prerequisites
 
-1. **ProtonMail Paid Account** with Bridge access
-2. **Email Forwarding** from Synthesis.com to ProtonMail
+1. **Email Account** with IMAP access (Gmail, Outlook, etc.)
+2. **Email Forwarding** from Synthesis.com to your email account
 3. **Docker** and Docker Compose (for containerized deployment)
 
 ### Email Configuration
 
-1. **Setup ProtonMail Bridge**:
-   ```bash
-   docker run --rm -it -v protonmail:/root shenxn/protonmail-bridge init
-   # Follow prompts to add your account
-   ```
-
-2. **Configure Email Forwarding**:
-   - Set up rule to forward Synthesis emails to your ProtonMail
+1. **Configure Email Forwarding**:
+   - Set up rule to forward Synthesis emails to your email account
    - Ensure both login codes and progress emails are forwarded
+
+2. **Setup App Password** (for Gmail):
+   - Enable 2-factor authentication
+   - Generate app-specific password for IMAP access
 
 ### Environment Variables
 
 Create `.env` file with your credentials:
 
 ```env
-# ProtonMail Bridge Settings
-EMAIL_SERVER=protonmail-bridge
-EMAIL_PORT=143
-EMAIL_USERNAME=claude.weeks@proton.me
-EMAIL_PASSWORD=your-bridge-password
-EMAIL_USE_SSL=false
+# Email Settings (Gmail example)
+EMAIL_SERVER=imap.gmail.com
+EMAIL_PORT=993
+EMAIL_USERNAME=your-email@gmail.com
+EMAIL_PASSWORD=your-app-password
+EMAIL_USE_SSL=true
 
 # Synthesis.com Account
 SYNTHESIS_EMAIL=student@example.com
@@ -120,7 +118,7 @@ STUDY_GOAL_MINUTES=30
 
 2. **Check logs**:
    ```bash
-   docker-compose logs -f synthesis-tracker
+   docker-compose logs -f synthesis
    ```
 
 ### Open WebUI Integration
@@ -134,7 +132,7 @@ STUDY_GOAL_MINUTES=30
    ```json
    {
      "mcpServers": {
-       "synthesis-tracker": {
+       "synthesis": {
          "command": "python",
          "args": ["src/synthesis/server.py"],
          "env": {
@@ -194,9 +192,9 @@ Whiskers automatically checks if no study activity
 ### Common Issues
 
 1. **Email Connection Fails**:
-   - Verify ProtonMail Bridge is running
-   - Check Bridge credentials are correct
-   - Ensure IMAP port (143) is accessible
+   - Verify email server settings are correct
+   - Check email credentials and app password
+   - Ensure IMAP port is accessible (993 for Gmail SSL)
 
 2. **Web Automation Fails**:
    - Check if Synthesis changed their login flow
@@ -225,7 +223,7 @@ curl http://localhost:8000/health
 ## Security Considerations
 
 - **Email credentials** stored securely in environment variables
-- **ProtonMail Bridge** provides encrypted email access
+- **App passwords** provide secure email access without exposing main password
 - **Database encryption** for sensitive progress data
 - **Container isolation** in production deployments
 
@@ -239,7 +237,7 @@ curl http://localhost:8000/health
 
 ## Support
 
-For issues specific to Synthesis Tracker:
+For issues specific to Synthesis MCP server:
 1. Check this documentation first
 2. Review Docker logs for errors
 3. Test email connectivity manually

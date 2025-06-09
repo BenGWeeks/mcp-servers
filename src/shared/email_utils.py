@@ -114,11 +114,13 @@ class EmailMonitor:
     
     def extract_synthesis_code(self, emails: List[Dict[str, Any]]) -> Optional[str]:
         """Extract Synthesis login code from emails."""
+        # Updated patterns based on actual Synthesis email format
         synthesis_patterns = [
-            r"Your verification code is:?\s*([A-Z0-9]{6})",
-            r"verification code:?\s*([A-Z0-9]{6})",
-            r"login code:?\s*([A-Z0-9]{6})",
-            r"code:?\s*([A-Z0-9]{6})",
+            r"Here's your log in verification code:\s*(\d{4})",  # Main pattern from samples
+            r"verification code:\s*(\d{4})",
+            r"login code:\s*(\d{4})",
+            r"code:\s*(\d{4})",
+            r"\b(\d{4})\b",  # Fallback: any 4-digit number
         ]
         
         # Sort emails by date (newest first)
@@ -127,15 +129,21 @@ class EmailMonitor:
         for email_data in sorted_emails:
             subject = email_data.get("subject", "").lower()
             body = email_data.get("body", "")
+            from_addr = email_data.get("from", "").lower()
             
-            # Check if this looks like a Synthesis email
-            if any(keyword in subject for keyword in ["synthesis", "verification", "login"]):
+            # Check if this looks like a Synthesis login email
+            if ("login for synthesis" in subject or 
+                "synthesis" in subject and "login" in subject or
+                "teams@synthesis.com" in from_addr):
+                
                 for pattern in synthesis_patterns:
-                    match = re.search(pattern, body, re.IGNORECASE)
+                    match = re.search(pattern, body, re.IGNORECASE | re.MULTILINE)
                     if match:
                         code = match.group(1)
-                        logger.info(f"Found Synthesis code: {code}")
-                        return code
+                        # Verify it's a 4-digit code
+                        if len(code) == 4 and code.isdigit():
+                            logger.info(f"Found Synthesis code: {code}")
+                            return code
         
         return None
     
@@ -156,31 +164,255 @@ class EmailMonitor:
 
 
 class SynthesisEmailMonitor(EmailMonitor):
-    """Specialized email monitor for Synthesis.com authentication."""
+    """Specialized email monitor for Synthesis.com authentication and progress tracking."""
     
     def get_latest_login_code(self) -> Optional[str]:
         """Get the latest Synthesis login code from email."""
         emails = self.search_emails(
-            subject_filter="verification",
-            since_hours=1  # Only check last hour
+            subject_filter="Login for Synthesis",
+            since_hours=1  # Only check last hour - removed from_filter to support forwarded emails
         )
         
         return self.extract_synthesis_code(emails)
     
+    def get_recent_login_codes(self, limit: int = 5) -> List[Dict[str, Any]]:
+        """Get recent login codes with timestamps."""
+        emails = self.search_emails(
+            subject_filter="Login for Synthesis",
+            since_hours=24  # Removed from_filter to support forwarded emails
+        )
+        
+        codes = []
+        for email_data in emails[:limit]:
+            code = self.extract_synthesis_code([email_data])
+            if code:
+                codes.append({
+                    "code": code,
+                    "date": email_data["date"],
+                    "email_id": email_data["id"]
+                })
+        
+        return codes
+    
+    def get_progress_emails(self, since_hours: int = 24) -> List[Dict[str, Any]]:
+        """Get progress and session emails from Synthesis."""
+        # Search for different types of progress emails
+        all_emails = []
+        
+        # Progress summary emails
+        progress_emails = self.search_emails(
+            subject_filter="progress with Synthesis",
+            since_hours=since_hours  # Removed from_filter to support forwarded emails
+        )
+        all_emails.extend(progress_emails)
+        
+        # Session emails  
+        session_emails = self.search_emails(
+            subject_filter="Synthesis Session",
+            since_hours=since_hours  # Removed from_filter to support forwarded emails
+        )
+        all_emails.extend(session_emails)
+        
+        # Parse and extract data from emails
+        parsed_emails = []
+        for email_data in all_emails:
+            parsed = self._parse_progress_email(email_data)
+            if parsed:
+                parsed_emails.append(parsed)
+        
+        return parsed_emails
+    
+    def get_newsletter_emails(self, since_hours: int = 168) -> List[Dict[str, Any]]:
+        """Get weekly newsletter emails about upcoming Synthesis activities."""
+        # Weekly newsletter emails
+        newsletters = self.search_emails(
+            subject_filter="This Week at Synthesis",
+            since_hours=since_hours  # Check last week - removed from_filter to support forwarded emails
+        )
+        
+        # Return newsletters with minimal parsing - just for AI context
+        parsed_newsletters = []
+        for email_data in newsletters:
+            parsed_newsletters.append({
+                "subject": email_data.get("subject", ""),
+                "date": email_data.get("date", ""),
+                "type": "newsletter",
+                "content": email_data.get("body", "")[:1000],  # First 1000 chars
+                "full_content": email_data.get("body", "")
+            })
+        
+        return parsed_newsletters
+    
+    def get_payment_emails(self, since_hours: int = 720) -> List[Dict[str, Any]]:
+        """Get payment confirmation emails for subscription tracking."""
+        # Payment confirmation emails (check last 30 days)
+        payments = self.search_emails(
+            subject_filter="Payment Confirmation for Synthesis",
+            since_hours=since_hours  # Removed from_filter to support forwarded emails
+        )
+        
+        # Parse payment emails
+        parsed_payments = []
+        for email_data in payments:
+            parsed = self._parse_payment_email(email_data)
+            if parsed:
+                parsed_payments.append(parsed)
+        
+        return parsed_payments
+    
+    def _parse_progress_email(self, email_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Parse a progress email to extract study data."""
+        try:
+            subject = email_data.get("subject", "")
+            body = email_data.get("body", "")
+            
+            # Extract student name
+            student_match = re.search(r"(\w+)'s (?:progress|Synthesis Session)", subject)
+            student_name = student_match.group(1) if student_match else None
+            
+            # Extract study minutes
+            minutes_patterns = [
+                r"Daily Active Minutes\s*(\d+)",  # Check this first for weekly totals
+                r"(\d+\.?\d*)\s*minutes",
+                r"(\d+\.?\d*)\s*MINUTES",
+            ]
+            
+            study_minutes = 0
+            for pattern in minutes_patterns:
+                match = re.search(pattern, body)
+                if match:
+                    study_minutes = float(match.group(1))
+                    break
+            
+            # Extract activities/lessons
+            activities = []
+            
+            # Look for lesson titles in specific formats
+            lesson_patterns = [
+                r"(?:worked on|completed|explored)\s+[\"']([^\"']+)[\"']",
+                r"session:\s*([^\n]+)",
+                r"Activities?\s*\n+([^\n]+)",
+            ]
+            
+            for pattern in lesson_patterns:
+                matches = re.findall(pattern, body, re.IGNORECASE)
+                activities.extend(matches)
+            
+            # Also look for lessons in the weekly format "Lesson Name\n\nCategory\n\nX minutes"
+            weekly_lesson_pattern = r"([A-Z][^\n]+)\n\n[^\n]+\n\n\d+\.?\d*\s*minutes"
+            weekly_matches = re.findall(weekly_lesson_pattern, body)
+            for match in weekly_matches:
+                if match.strip() and match.strip() not in activities:
+                    activities.append(match.strip())
+            
+            # Extract achievements if present
+            achievements = []
+            # Look for specific known achievements
+            known_achievements = ["Treasure Seeker", "Rising Star", "Gold Digger", 
+                                "Speed Demon", "Perfect Score", "Math Master"]
+            for achievement in known_achievements:
+                if achievement in body:
+                    achievements.append(achievement)
+            
+            return {
+                "subject": subject,
+                "date": email_data["date"],
+                "student_name": student_name,
+                "study_minutes": study_minutes,
+                "activities": activities,
+                "achievements": achievements,
+                "content": body[:500],  # First 500 chars for reference
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing progress email: {e}")
+            return None
+    
+    def _parse_payment_email(self, email_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Parse a payment confirmation email to extract billing data."""
+        try:
+            subject = email_data.get("subject", "")
+            body = email_data.get("body", "")
+            
+            # Extract payment amount
+            amount_patterns = [
+                r"payment of \$(\d+(?:\.\d{2})?)",
+                r"\$(\d+(?:\.\d{2})?) has been processed",
+                r"amount.*?\$(\d+(?:\.\d{2})?)",
+            ]
+            
+            amount = None
+            for pattern in amount_patterns:
+                match = re.search(pattern, body, re.IGNORECASE)
+                if match:
+                    amount = float(match.group(1))
+                    break
+            
+            # Extract plan type
+            plan_patterns = [
+                r"(Tutor Monthly|Tutor Annual|Premium|Basic)",
+                r"Your ([^\\s]+) payment",
+            ]
+            
+            plan_type = None
+            for pattern in plan_patterns:
+                match = re.search(pattern, body, re.IGNORECASE)
+                if match:
+                    plan_type = match.group(1)
+                    break
+            
+            # Extract invoice URL
+            invoice_url = None
+            invoice_match = re.search(r"https://invoice\.stripe\.com/[^\\s\"'<>]+", body)
+            if invoice_match:
+                invoice_url = invoice_match.group(0)
+            
+            return {
+                "subject": subject,
+                "date": email_data["date"],
+                "type": "payment",
+                "amount": amount,
+                "plan_type": plan_type,
+                "invoice_url": invoice_url,
+                "content": body[:500],  # First 500 chars for reference
+            }
+            
+        except Exception as e:
+            logger.error(f"Error parsing payment email: {e}")
+            return None
+    
     def cleanup_old_codes(self):
         """Clean up old verification emails to prevent clutter."""
         emails = self.search_emails(
-            subject_filter="verification",
-            since_hours=24
+            subject_filter="Login for Synthesis",
+            since_hours=48  # Removed from_filter to support forwarded emails
         )
         
-        # Delete emails older than 1 hour
-        one_hour_ago = datetime.now() - timedelta(hours=1)
+        # Delete emails older than 2 hours
+        two_hours_ago = datetime.now() - timedelta(hours=2)
         
         for email_data in emails:
             try:
-                email_date = datetime.strptime(email_data["date"], "%a, %d %b %Y %H:%M:%S %z")
-                if email_date.replace(tzinfo=None) < one_hour_ago:
+                # Parse various date formats
+                date_str = email_data["date"]
+                # Try different date parsing strategies
+                for fmt in ["%a, %d %b %Y %H:%M:%S %z", "%a, %d %b %Y %H:%M:%S %Z"]:
+                    try:
+                        email_date = datetime.strptime(date_str, fmt)
+                        break
+                    except:
+                        continue
+                else:
+                    # If no format works, skip
+                    continue
+                    
+                if email_date.replace(tzinfo=None) < two_hours_ago:
                     self.delete_email(email_data["id"])
+                    logger.info(f"Deleted old login code email from {date_str}")
+                    
             except Exception as e:
-                logger.error(f"Error processing email date: {e}")
+                logger.error(f"Error processing email cleanup: {e}")
+    
+    def test_connection(self) -> bool:
+        """Test email connection and return status."""
+        return self.connect()

@@ -20,6 +20,7 @@ from shared.email_utils import SynthesisEmailMonitor
 from shared.storage_utils import StudyProgressDB
 from synthesis.synthesis_client import SynthesisClient
 from synthesis.config import config
+from synthesis.scheduler import get_scheduler, start_scheduler
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -30,20 +31,15 @@ class SynthesisTrackerServer(MCPBaseServer):
     """MCP server for tracking Synthesis.com study progress."""
     
     def __init__(self):
-        super().__init__("synthesis-tracker", "1.0.0")
+        super().__init__("synthesis", "1.0.0")
         
-        # Initialize components
-        self.email_monitor = SynthesisEmailMonitor(
-            server=config.email_server,
-            port=config.email_port,
-            username=config.email_username,
-            password=config.email_password,
-            use_ssl=config.email_use_ssl
-        )
-        
+        # Initialize database (scheduler handles email monitoring)
         self.db = StudyProgressDB(config.database_path)
         
-        logger.info("Synthesis Tracker MCP server initialized")
+        # Start background scheduler for automated data collection
+        start_scheduler()
+        
+        logger.info("Synthesis Tracker MCP server initialized with background scheduler")
     
     async def get_tools(self) -> List[Tool]:
         """Return available MCP tools."""
@@ -85,7 +81,17 @@ class SynthesisTrackerServer(MCPBaseServer):
             ),
             create_tool(
                 name="force_update_progress",
-                description="Force update study progress by logging into Synthesis.com",
+                description="Trigger immediate background data collection and return updated progress",
+                parameters={}
+            ),
+            create_tool(
+                name="get_synthesis_newsletter",
+                description="Get the latest Synthesis newsletter to see upcoming activities and events",
+                parameters={}
+            ),
+            create_tool(
+                name="get_subscription_status",
+                description="Get Synthesis subscription status and recent payment history",
                 parameters={}
             )
         ]
@@ -112,6 +118,12 @@ class SynthesisTrackerServer(MCPBaseServer):
             
             elif name == "force_update_progress":
                 return await self._force_update_progress()
+            
+            elif name == "get_synthesis_newsletter":
+                return await self._get_synthesis_newsletter()
+            
+            elif name == "get_subscription_status":
+                return await self._get_subscription_status()
             
             else:
                 return f"Unknown tool: {name}"
@@ -207,7 +219,7 @@ class SynthesisTrackerServer(MCPBaseServer):
             logger.error(f"Error getting weekly summary: {e}")
             return {"error": str(e)}
     
-    def _generate_recommendations(self, stats: Dict[str, Any], streak: int) -> List[str]:
+    def _generate_recommendations(self, stats: Dict[str, Any], streak: int) -> str:
         """Generate personalized recommendations."""
         recommendations = []
         
@@ -228,7 +240,7 @@ class SynthesisTrackerServer(MCPBaseServer):
         if not recommendations:
             recommendations.append("You're doing great! Keep up the consistent study habits!")
         
-        return recommendations
+        return " ".join(recommendations)
     
     async def _send_study_reminder(self, custom_message: str = None) -> Dict[str, Any]:
         """Send study reminder if needed."""
@@ -310,53 +322,145 @@ class SynthesisTrackerServer(MCPBaseServer):
             return {"error": str(e)}
     
     async def _force_update_progress(self) -> Dict[str, Any]:
-        """Force update by logging into Synthesis and scraping data."""
+        """Trigger immediate background data collection."""
         try:
-            logger.info("Starting forced progress update...")
+            logger.info("Triggering immediate data collection...")
             
-            # Get login code from email
-            login_code = self.email_monitor.get_latest_login_code()
+            # Get scheduler and trigger immediate update
+            scheduler = get_scheduler()
+            result = await scheduler.trigger_immediate_update()
             
-            if not login_code:
-                return {
-                    "success": False,
-                    "message": "No login code found in email. Please ensure email forwarding is setup correctly."
-                }
-            
-            # Login and scrape data
-            async with SynthesisClient(headless=config.headless_browser) as client:
-                login_success = await client.login(config.synthesis_email, login_code)
-                
-                if not login_success:
-                    return {
-                        "success": False,
-                        "message": "Failed to login to Synthesis.com"
-                    }
-                
-                # Get progress data
-                progress_data = await client.get_study_progress()
-                
-                # Save to database
-                self.db.save_study_session(progress_data)
-                
-                # Clean up email
-                self.email_monitor.cleanup_old_codes()
+            if result["success"]:
+                # Get the updated session data
+                today = datetime.now().strftime("%Y-%m-%d")
+                session = self.db.get_study_session(today)
                 
                 return {
                     "success": True,
-                    "message": "Successfully updated progress from Synthesis.com",
+                    "message": "Data collection completed successfully",
                     "data": {
-                        "study_minutes": progress_data.get("study_time_minutes", 0),
-                        "lessons_completed": len(progress_data.get("lessons_completed", [])),
-                        "last_activity": progress_data.get("last_activity"),
-                        "streak_days": progress_data.get("streak_days", 0)
+                        "study_minutes": session.get("study_minutes", 0) if session else 0,
+                        "lessons_completed": len(session.get("lessons_completed", [])) if session else 0,
+                        "last_activity": session.get("last_activity") if session else None,
+                        "streak_days": self.db.get_current_streak(),
+                        "data_sources": {
+                            "email_processed": session.get("email_processed", False) if session else False,
+                            "web_scraped": session.get("web_scraped", False) if session else False
+                        }
                     }
                 }
+            else:
+                return result
                 
         except Exception as e:
             logger.error(f"Error in forced update: {e}")
             return {
                 "success": False,
+                "error": str(e)
+            }
+    
+    async def _get_synthesis_newsletter(self) -> Dict[str, Any]:
+        """Get the latest Synthesis newsletter content for AI context."""
+        try:
+            # Get scheduler to access email monitor
+            scheduler = get_scheduler()
+            newsletters = scheduler.email_monitor.get_newsletter_emails(since_hours=168)  # Last week
+            
+            if not newsletters:
+                return {
+                    "newsletter_available": False,
+                    "message": "No recent newsletters found",
+                    "last_checked": datetime.now().isoformat()
+                }
+            
+            # Get the most recent newsletter
+            latest_newsletter = newsletters[0]
+            
+            return {
+                "newsletter_available": True,
+                "newsletter": {
+                    "subject": latest_newsletter.get("subject", ""),
+                    "date": latest_newsletter.get("date", ""),
+                    "preview": latest_newsletter.get("content", ""),
+                    "full_content": latest_newsletter.get("full_content", "")[:2000]  # Limit for context
+                },
+                "total_newsletters": len(newsletters),
+                "message": "Latest Synthesis newsletter content available for AI context"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting newsletter: {e}")
+            return {
+                "newsletter_available": False,
+                "error": str(e)
+            }
+    
+    async def _get_subscription_status(self) -> Dict[str, Any]:
+        """Get subscription status and payment history."""
+        try:
+            # Get scheduler to access email monitor
+            scheduler = get_scheduler()
+            payments = scheduler.email_monitor.get_payment_emails(since_hours=2160)  # Last 90 days
+            
+            if not payments:
+                return {
+                    "subscription_active": "unknown",
+                    "message": "No recent payment emails found",
+                    "last_checked": datetime.now().isoformat()
+                }
+            
+            # Get the most recent payment
+            latest_payment = payments[0]
+            
+            # Calculate subscription status based on most recent payment
+            try:
+                from dateutil import parser
+                payment_date = parser.parse(latest_payment.get("date", ""))
+                days_since_payment = (datetime.now() - payment_date.replace(tzinfo=None)).days
+            except:
+                days_since_payment = None
+            
+            # Determine subscription status
+            subscription_active = "unknown"
+            if days_since_payment is not None:
+                if days_since_payment <= 35:  # Within monthly cycle + grace period
+                    subscription_active = "active"
+                elif days_since_payment <= 60:
+                    subscription_active = "possibly_expired"
+                else:
+                    subscription_active = "likely_expired"
+            
+            # Calculate total spent
+            total_spent = sum(p.get("amount", 0) for p in payments if p.get("amount"))
+            
+            return {
+                "subscription_active": subscription_active,
+                "latest_payment": {
+                    "date": latest_payment.get("date", ""),
+                    "amount": latest_payment.get("amount", 0),
+                    "plan_type": latest_payment.get("plan_type", "Unknown"),
+                    "days_ago": days_since_payment
+                },
+                "payment_history": {
+                    "total_payments": len(payments),
+                    "total_spent": total_spent,
+                    "average_payment": round(total_spent / len(payments), 2) if payments else 0,
+                    "recent_payments": [
+                        {
+                            "date": p.get("date", ""),
+                            "amount": p.get("amount", 0),
+                            "plan_type": p.get("plan_type", "Unknown")
+                        }
+                        for p in payments[:3]  # Last 3 payments
+                    ]
+                },
+                "message": f"Found {len(payments)} payments in the last 90 days"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting subscription status: {e}")
+            return {
+                "subscription_active": "error",
                 "error": str(e)
             }
 
