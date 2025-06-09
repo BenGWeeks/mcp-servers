@@ -86,5 +86,5 @@ jobs:
 
     - name: Test Docker build
       run: |
-        docker build -f docker/Dockerfile.synthesis -t synthesis-tracker-test .
-        docker run --rm synthesis-tracker-test python -c "import src.synthesis.server; print('✅ Import successful')"
+        docker build -f docker/Dockerfile.synthesis -t synthesis-test .
+        docker run --rm synthesis-test python -c "import src.synthesis.server; print('✅ Import successful')"

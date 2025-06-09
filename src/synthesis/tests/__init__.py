@@ -1,0 +1,1 @@
+# Synthesis MCP Server Tests
