@@ -1,36 +1,16 @@
-# MCP Protocol
-mcp==1.0.0
+# Core MCP dependencies
+mcp>=1.0.0
+pydantic>=2.0.0
 
 # Web automation
-playwright==1.47.0
-selenium==4.25.0
+playwright>=1.40.0
 
 # Email handling
-imapclient==3.0.1
-email-validator==2.1.1
+imapclient>=3.0.0
 
-# Data handling
-pandas==2.1.4
-pydantic==2.5.2
-
-# HTTP and API
-requests==2.31.0
-httpx==0.25.2
-fastapi==0.104.1
-uvicorn==0.24.0
+# Background scheduling
+schedule>=1.2.0
 
 # Utilities
-python-dotenv==1.0.0
-schedule==1.2.0
-pytz==2023.3
-python-dateutil==2.8.2
-
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-mock==3.12.0
-
-# Development
-black==23.11.0
-isort==5.12.0
-flake8==6.1.0
+python-dotenv>=1.0.0
+python-dateutil>=2.8.0
