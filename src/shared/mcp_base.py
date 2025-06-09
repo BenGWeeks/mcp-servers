@@ -56,7 +56,10 @@ class MCPBaseServer(ABC):
     async def run(self):
         """Run the MCP server."""
         async with stdio_server(self.server) as streams:
-            await self.server.run(*streams)
+            await self.server.run(
+                streams[0], streams[1], 
+                initialization_options={}
+            )
 
 
 class Tool:
