@@ -58,6 +58,14 @@ class MCPBaseServer(ABC):
         await stdio_server(self.server)
 
 
+class Tool:
+    """Simple tool class for MCP compatibility."""
+    def __init__(self, name: str, description: str, inputSchema: Dict[str, Any] = None):
+        self.name = name
+        self.description = description
+        self.inputSchema = inputSchema or {}
+
+
 class ToolRegistry:
     """Registry for managing MCP tools."""
     
@@ -75,14 +83,6 @@ class ToolRegistry:
     def get_tool(self, name: str) -> Optional[Tool]:
         """Get tool by name."""
         return self.tools.get(name)
-
-
-class Tool:
-    """Simple tool class for MCP compatibility."""
-    def __init__(self, name: str, description: str, inputSchema: Dict[str, Any] = None):
-        self.name = name
-        self.description = description
-        self.inputSchema = inputSchema or {}
 
 def create_tool(
     name: str,
