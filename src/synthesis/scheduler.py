@@ -89,13 +89,23 @@ class SynthesisDataScheduler:
             last_session = self.db.get_study_session(datetime.now().strftime("%Y-%m-%d"))
             
             if not last_session or self._is_data_stale(last_session):
-                await self._check_emails()
-                await self._update_progress_from_web()
+                # Try email collection, but don't fail if it's unavailable
+                try:
+                    self._check_emails()
+                except Exception as email_error:
+                    logger.warning(f"Email collection failed during startup: {email_error}")
+                
+                # Try web scraping, but don't fail if it's unavailable
+                try:
+                    await self._update_progress_from_web()
+                except Exception as web_error:
+                    logger.warning(f"Web scraping failed during startup: {web_error}")
             else:
                 logger.info("Recent data found, skipping initial collection")
                 
         except Exception as e:
             logger.error(f"Error in initial data collection: {e}")
+            # Don't crash the server on startup data collection failure
     
     def _is_data_stale(self, session: dict) -> bool:
         """Check if session data is stale (older than 1 hour)."""
@@ -116,40 +126,62 @@ class SynthesisDataScheduler:
         try:
             logger.debug("Checking emails for Synthesis updates...")
             
+            # Test email connection first
+            if not self.email_monitor.test_connection():
+                logger.warning("Email connection failed, skipping email check")
+                return
+            
             # Check for login codes
-            login_codes = self.email_monitor.get_recent_login_codes(limit=5)
+            try:
+                login_codes = self.email_monitor.get_recent_login_codes(limit=5)
+                if login_codes:
+                    logger.info(f"Found {len(login_codes)} recent login codes")
+            except Exception as e:
+                logger.warning(f"Failed to get login codes: {e}")
             
             # Check for progress emails
-            progress_emails = self.email_monitor.get_progress_emails()
-            
-            if progress_emails:
-                logger.info(f"Found {len(progress_emails)} progress emails")
-                for email_data in progress_emails:
-                    self._process_progress_email(email_data)
+            try:
+                progress_emails = self.email_monitor.get_progress_emails()
+                if progress_emails:
+                    logger.info(f"Found {len(progress_emails)} progress emails")
+                    for email_data in progress_emails:
+                        self._process_progress_email(email_data)
+            except Exception as e:
+                logger.warning(f"Failed to get progress emails: {e}")
             
             # Check for newsletters (for AI context)
-            newsletters = self.email_monitor.get_newsletter_emails()
-            if newsletters:
-                logger.info(f"Found {len(newsletters)} newsletter emails")
-                # Store latest newsletter for AI context
-                latest_newsletter = newsletters[0]  # Most recent
-                self.db.save_notification(
-                    "newsletter",
-                    f"📰 New Synthesis newsletter: {latest_newsletter['subject']}"
-                )
+            try:
+                newsletters = self.email_monitor.get_newsletter_emails()
+                if newsletters:
+                    logger.info(f"Found {len(newsletters)} newsletter emails")
+                    # Store latest newsletter for AI context
+                    latest_newsletter = newsletters[0]  # Most recent
+                    self.db.save_notification(
+                        "newsletter",
+                        f"📰 New Synthesis newsletter: {latest_newsletter['subject']}"
+                    )
+            except Exception as e:
+                logger.warning(f"Failed to get newsletters: {e}")
             
             # Check for payment confirmations
-            payments = self.email_monitor.get_payment_emails()
-            if payments:
-                logger.info(f"Found {len(payments)} payment emails")
-                for payment_data in payments:
-                    self._process_payment_email(payment_data)
+            try:
+                payments = self.email_monitor.get_payment_emails()
+                if payments:
+                    logger.info(f"Found {len(payments)} payment emails")
+                    for payment_data in payments:
+                        self._process_payment_email(payment_data)
+            except Exception as e:
+                logger.warning(f"Failed to get payment emails: {e}")
             
             # Clean up old emails
-            self.email_monitor.cleanup_old_codes()
+            try:
+                self.email_monitor.cleanup_old_codes()
+            except Exception as e:
+                logger.warning(f"Failed to cleanup old codes: {e}")
             
         except Exception as e:
             logger.error(f"Error checking emails: {e}")
+            # Don't crash the scheduler on email errors
     
     def _process_progress_email(self, email_data: dict):
         """Process a progress email and extract study data."""
@@ -240,35 +272,46 @@ class SynthesisDataScheduler:
                 return
             
             # Get latest login code
-            login_code = self.email_monitor.get_latest_login_code()
+            try:
+                login_code = self.email_monitor.get_latest_login_code()
+            except Exception as e:
+                logger.warning(f"Failed to get login code for web scraping: {e}")
+                return
             
             if not login_code:
                 logger.warning("No login code available for web scraping")
                 return
             
             # Scrape data
-            async with SynthesisClient(headless=config.headless_browser) as client:
-                login_success = await client.login(config.synthesis_email, login_code)
-                
-                if not login_success:
-                    logger.error("Failed to login to Synthesis.com")
-                    return
-                
-                progress_data = await client.get_study_progress()
-                
-                # Mark as web-scraped data
-                progress_data["web_scraped"] = True
-                progress_data["updated_at"] = datetime.now().isoformat()
-                
-                # Merge with existing session data if available
-                if session:
-                    # Keep email data, add web data
-                    progress_data.update({
-                        "email_processed": session.get("email_processed", False)
-                    })
-                
-                self.db.save_study_session(progress_data)
-                logger.info("Successfully updated progress from web")
+            try:
+                from synthesis.synthesis_client import SynthesisClient
+                async with SynthesisClient(headless=config.headless_browser) as client:
+                    login_success = await client.login(config.synthesis_email, login_code)
+                    
+                    if not login_success:
+                        logger.error("Failed to login to Synthesis.com")
+                        return
+                    
+                    progress_data = await client.get_study_progress()
+                    
+                    # Mark as web-scraped data
+                    progress_data["web_scraped"] = True
+                    progress_data["updated_at"] = datetime.now().isoformat()
+                    
+                    # Merge with existing session data if available
+                    if session:
+                        # Keep email data, add web data
+                        progress_data.update({
+                            "email_processed": session.get("email_processed", False)
+                        })
+                    
+                    self.db.save_study_session(progress_data)
+                    logger.info("Successfully updated progress from web")
+                    
+            except ImportError:
+                logger.warning("Synthesis client not available, skipping web scraping")
+            except Exception as e:
+                logger.warning(f"Web scraping failed: {e}")
                 
         except Exception as e:
             logger.error(f"Error updating progress from web: {e}")
