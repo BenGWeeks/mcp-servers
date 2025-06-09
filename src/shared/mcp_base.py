@@ -8,17 +8,9 @@ import logging
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
-from mcp import ClientSession, StdioServerSession
+import mcp.types as types
 from mcp.server import Server
-from mcp.server.models import InitializationOptions
-from mcp.types import (
-    CallToolRequest,
-    CallToolResult,
-    ListToolsRequest,
-    ListToolsResult,
-    Tool,
-    TextContent,
-)
+from mcp.server.stdio import stdio_server
 
 logger = logging.getLogger(__name__)
 
@@ -36,28 +28,23 @@ class MCPBaseServer(ABC):
         """Setup MCP server handlers."""
         
         @self.server.list_tools()
-        async def handle_list_tools() -> ListToolsResult:
+        async def handle_list_tools():
             """List available tools."""
             tools = await self.get_tools()
-            return ListToolsResult(tools=tools)
+            return [tool.__dict__ for tool in tools]
         
         @self.server.call_tool()
-        async def handle_call_tool(request: CallToolRequest) -> CallToolResult:
+        async def handle_call_tool(name: str, arguments: dict):
             """Handle tool calls."""
             try:
-                result = await self.call_tool(request.params.name, request.params.arguments)
-                return CallToolResult(
-                    content=[TextContent(type="text", text=str(result))]
-                )
+                result = await self.call_tool(name, arguments)
+                return [{"type": "text", "text": str(result)}]
             except Exception as e:
-                logger.error(f"Error calling tool {request.params.name}: {e}")
-                return CallToolResult(
-                    content=[TextContent(type="text", text=f"Error: {str(e)}")],
-                    isError=True
-                )
+                logger.error(f"Error calling tool {name}: {e}")
+                return [{"type": "text", "text": f"Error: {str(e)}"}]
     
     @abstractmethod
-    async def get_tools(self) -> List[Tool]:
+    async def get_tools(self) -> List["Tool"]:
         """Return list of available tools."""
         pass
     
@@ -68,14 +55,7 @@ class MCPBaseServer(ABC):
     
     async def run(self):
         """Run the MCP server."""
-        async with StdioServerSession(self.server) as session:
-            await session.initialize(
-                InitializationOptions(
-                    server_name=self.name,
-                    server_version=self.version
-                )
-            )
-            await session.run()
+        await stdio_server(self.server)
 
 
 class ToolRegistry:
@@ -96,6 +76,13 @@ class ToolRegistry:
         """Get tool by name."""
         return self.tools.get(name)
 
+
+class Tool:
+    """Simple tool class for MCP compatibility."""
+    def __init__(self, name: str, description: str, inputSchema: Dict[str, Any] = None):
+        self.name = name
+        self.description = description
+        self.inputSchema = inputSchema or {}
 
 def create_tool(
     name: str,
