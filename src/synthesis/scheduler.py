@@ -373,7 +373,7 @@ class SynthesisDataScheduler:
             logger.info("Triggering immediate data collection...")
             
             # Run both email and web collection
-            await self._check_emails()
+            self._check_emails()
             await self._update_progress_from_web()
             
             # Get updated session data
