@@ -110,7 +110,7 @@ class StudyProgressDB:
                     date,
                     progress_data.get("logged_in", False),
                     progress_data.get("login_time"),
-                    progress_data.get("study_time_minutes", 0),
+                    progress_data.get("study_minutes", progress_data.get("study_time_minutes", 0)),
                     lessons_json,
                     progress_data.get("last_activity"),
                     progress_data.get("streak_days", 0),

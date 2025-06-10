@@ -36,10 +36,12 @@ class SynthesisTrackerServer(MCPBaseServer):
         # Initialize database (scheduler handles email monitoring)
         self.db = StudyProgressDB(config.database_path)
         
-        # Start background scheduler for automated data collection
-        start_scheduler()
-        
-        logger.info("Synthesis Tracker MCP server initialized with background scheduler")
+        # Start background scheduler for automated data collection unless disabled
+        if not os.getenv('DISABLE_SCHEDULER', '').lower() == 'true':
+            start_scheduler()
+            logger.info("Synthesis Tracker MCP server initialized with background scheduler")
+        else:
+            logger.info("Synthesis Tracker MCP server initialized WITHOUT scheduler (disabled via env)")
     
     async def get_tools(self) -> List[Tool]:
         """Return available MCP tools."""
