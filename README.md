@@ -10,7 +10,7 @@ This repository contains MCP servers that enable AI assistants to interact with 
 
 ### 🎓 Educational Platforms
 
-- **[Synthesis](src/synthesis/)** - Track progress on Synthesis.com math tutoring platform with automated background data collection
+- **[Synthesis](src/synthesis/)** - Track progress on Synthesis.com tutoring platform with by checking e-mails from Synthesis
 - **[DuoLingo](src/duolingo/)** - Language learning progress tracking *(Coming Soon)*
 - **[SimplyPiano](src/simply-piano/)** - Piano learning progress monitoring *(Coming Soon)*
 - **[Outschool](src/outschool/)** - Online class management *(Coming Soon)*
