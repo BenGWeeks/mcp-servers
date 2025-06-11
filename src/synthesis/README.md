@@ -4,15 +4,15 @@ A simplified Model Context Protocol (MCP) server for tracking study progress on 
 
 ## Overview
 
-The Synthesis MCP server provides AI assistants with direct access to Synthesis.com study progress by monitoring email notifications. This simplified architecture returns human-readable responses that AI assistants can easily interpret, without requiring complex parsing or database management.
+The Synthesis MCP server provides AI assistants with direct access to Synthesis.com study progress by monitoring email notifications. This architecture returns human-readable responses that AI assistants can easily interpret, without requiring complex parsing or database management.
 
-## Simplified Architecture
+## Architecture
 
 The server provides a lightweight, email-focused approach:
 
 1. **Direct Email Access**: Connects to ProtonMail Bridge or IMAP servers to fetch emails on-demand
 2. **Human-Readable Responses**: Returns formatted text that AI assistants can immediately understand
-3. **No Background Processing**: Fetches emails only when requested (0.3s response time)
+3. **No Background Processing**: Fetches emails only when requested (typically 0.3s response time)
 4. **No Database**: Stateless operation - emails are the source of truth
 5. **Flexible Parameters**: AI can request specific time ranges and email counts
 
@@ -75,7 +75,7 @@ Subject: Login for Synthesis Tutor
 From: Synthesis Tutor <no-reply@tutor.synthesis.com>
 Date: Tue, 10 Jun 2025 22:12:41 +0000
 Preview: Here's your log in verification code: 5045...
-**LOGIN CODE: 5045**
+**LOGIN CODE: 1234**
 
 ==================================================
 ```
