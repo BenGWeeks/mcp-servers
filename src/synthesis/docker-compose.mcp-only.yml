@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  synthesis-mcp:
+    build: .
+    container_name: synthesis-mcp
+    environment:
+      - EMAIL_SERVER=${EMAIL_SERVER}
+      - EMAIL_PORT=${EMAIL_PORT:-143}
+      - EMAIL_USERNAME=${EMAIL_USERNAME}
+      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-false}
+      - STUDY_GOAL_MINUTES=${STUDY_GOAL_MINUTES:-300}
+      - MINIMUM_STUDY_MINUTES=${MINIMUM_STUDY_MINUTES:-20}
+    volumes:
+      - ./synthesis-server.py:/app/synthesis-server.py:ro
+      - ./.env:/app/.env:ro
+    command: ["python3", "/app/synthesis-server.py"]
+    restart: unless-stopped
+
+networks:
+  default:
+    name: synthesis-network

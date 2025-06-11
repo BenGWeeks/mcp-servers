@@ -148,6 +148,19 @@ Preview: We're excited to announce new features coming to the platform...
 ==================================================
 ```
 
+## Repository Contents
+
+This repository includes everything needed to run the Synthesis MCP server:
+
+- **`synthesis-server.py`**: The main MCP server (200 lines, email-only)
+- **`docker-compose.yml`**: **Scripted setup** - MCP server + MCPO proxy (for Open WebUI)
+- **`docker-compose.mcp-only.yml`**: **Scripted setup** - MCP server only (for direct integration)
+- **`Dockerfile`**: Container build configuration
+- **`requirements.txt`**: Python dependencies
+- **`mcpo-config.json`**: MCPO configuration (used by both Docker and manual setup)
+- **`.env.example`**: Environment template with email settings
+- **`README.md`**: Complete setup and usage documentation
+
 ## Setup
 
 ### Prerequisites
@@ -227,19 +240,75 @@ Preview: We're excited to announce new features coming to the platform...
 
 ### Integration with Open WebUI
 
-1. **Add MCPO endpoint to Open WebUI:**
-   - Go to Admin Panel → Settings → Tools
-   - Add endpoint: `http://localhost:8002`
-   - Set API key: `synthesis-mcpo-key-2024`
-   - Import Synthesis tools
+#### What is MCPO?
 
-2. **Test the integration:**
+MCPO (MCP-to-OpenAPI proxy) is a tool that converts Model Context Protocol (MCP) servers into REST API endpoints that Open WebUI can consume. It acts as a bridge between:
+
+- **MCP Protocol**: Uses stdio (JSON-RPC over stdin/stdout) 
+- **REST API**: HTTP endpoints that Open WebUI expects
+
+**MCPO Features:**
+- Converts MCP tools to OpenAPI REST endpoints
+- Handles authentication with API keys
+- Provides automatic OpenAPI documentation
+- Manages CORS for web integration
+
+#### Option A: Using Docker (Recommended)
+
+Choose one of two Docker configurations:
+
+**A1. MCP Server + MCPO Proxy (for Open WebUI integration):**
+```bash
+cp .env.example .env
+# Edit .env with your email settings
+docker-compose up -d
+```
+
+**A2. MCP Server Only (for direct MCP integration):**
+```bash
+cp .env.example .env
+# Edit .env with your email settings
+docker-compose -f docker-compose.mcp-only.yml up -d
+```
+
+**For Open WebUI integration (A1):**
+- Go to Admin Panel → Settings → Tools
+- Add endpoint: `http://localhost:8002`
+- Set API key: `synthesis-mcpo-key-2024` *(safe for localhost)*
+- Import Synthesis tools
+
+#### Option B: Manual MCPO Setup
+
+If you want to run MCPO manually:
+
+1. **Install MCPO:**
    ```bash
-   curl -X POST "http://localhost:8002/get_study_progress" \
-     -H "Authorization: Bearer synthesis-mcpo-key-2024" \
-     -H "Content-Type: application/json" \
-     -d '{"limit": 3, "since_days": 7}'
+   npm install -g @open-webui/mcpo
    ```
+
+2. **Configure environment variables:**
+   ```bash
+   export EMAIL_SERVER=your-email-server
+   export EMAIL_USERNAME=your-email
+   export EMAIL_PASSWORD=your-password
+   # ... other environment variables
+   ```
+
+3. **Start MCPO with included config:**
+   ```bash
+   mcpo --config mcpo-config.json --port 8002 --api-key synthesis-mcpo-key-2024
+   ```
+
+   The included `mcpo-config.json` reads environment variables from your shell.
+
+#### Testing the Integration
+
+```bash
+curl -X POST "http://localhost:8002/get_study_progress" \
+  -H "Authorization: Bearer synthesis-mcpo-key-2024" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 3, "since_days": 7}'
+```
 
 ## What is Synthesis.com?
 
